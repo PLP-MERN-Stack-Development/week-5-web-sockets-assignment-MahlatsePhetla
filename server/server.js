@@ -1,4 +1,3 @@
-
 require("dotenv").config();
 const express = require("express");
 const http = require("http");
@@ -7,60 +6,66 @@ const { Server } = require("socket.io");
 
 const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
-const User = require("./models/User");
-const Message = require("./models/Message");
+const messageRoutes = require("./routes/messageRoutes");
 
-
+// Connect to MongoDB
 connectDB();
 
 const app = express();
 const server = http.createServer(app);
 
+// CORS options for your React frontend (Vite default port 5173)
+const corsOptions = {
+  origin: 'http://localhost:5173',
+  credentials: true,
+};
 
+app.use(cors(corsOptions));
+app.use(express.json());
+
+// Use routes (no inline route handlers that duplicate routes)
+app.use("/api/auth", authRoutes);
+app.use("/api/messages", messageRoutes);
+
+// Initialize Socket.IO server
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST"],
+    origin: corsOptions.origin,
+    credentials: true,
   },
 });
 
+const onlineUsers = new Map();
 
-app.use(cors());
-app.use(express.json());
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
 
+  // Listen for user login or join event to track username
+  socket.on("user_connected", (username) => {
+    onlineUsers.set(socket.id, username);
+    io.emit("online_users", Array.from(onlineUsers.values()));
+  });
 
-app.use("/api/auth", authRoutes);
+  socket.on("send_message", (message) => {
+    // Broadcast message to all users
+    io.emit("receive_message", message);
+  });
 
+  socket.on("typing", (username) => {
+    socket.broadcast.emit("user_typing", username);
+  });
 
-app.post("/api/test/message", async (req, res) => {
-  try {
-    const { userEmail, content, room } = req.body;
-    const user = await User.findOne({ email: userEmail });
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    const newMsg = await Message.create({
-      sender: user._id,
-      content,
-      room: room || "global",
-    });
-
-    const populatedMsg = await newMsg.populate("sender", "username email");
-    res.status(201).json(populatedMsg);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Error saving message" });
-  }
+  socket.on("disconnect", () => {
+    console.log("User disconnected:", socket.id);
+    onlineUsers.delete(socket.id);
+    io.emit("online_users", Array.from(onlineUsers.values()));
+  });
 });
 
 
-const messageRoutes = require("./routes/messageRoutes");
-app.use("/api/messages", messageRoutes);
 
-
-require("./socket/chat")(io);
-
-
-const PORT = process.env.PORT || 5000;
+// Start server
+const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
   console.log(` Server running on port ${PORT}`);
 });

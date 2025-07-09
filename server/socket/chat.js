@@ -1,67 +1,43 @@
 
-const Message = require("../models/Message");
+const { Server } = require("socket.io");
 
-module.exports = function (io) {
-  
-  const onlineUsers = new Map();
+const onlineUsers = new Map(); 
+const userSockets = new Map(); 
+
+const initSocket = (server) => {
+  const io = new Server(server, {
+    cors: {
+      origin: "http://localhost:5173",
+      credentials: true,
+    },
+  });
 
   io.on("connection", (socket) => {
-    console.log("User connected:", socket.id);
+    console.log("✅ Socket connected:", socket.id);
 
-    
-    socket.on("userOnline", (userId) => {
-      onlineUsers.set(userId, socket.id);
-      console.log(`User ${userId} is online`);
+    socket.on("user_connected", (username) => {
+      onlineUsers.set(socket.id, username);
+      userSockets.set(username, socket.id);
 
-      
-      io.emit("onlineUsers", Array.from(onlineUsers.keys()));
+      io.emit("online_users", Array.from(userSockets.keys()));
     });
 
-    
-    socket.on("joinRoom", (room) => {
-      socket.join(room);
-      console.log(`Socket ${socket.id} joined room: ${room}`);
-    });
-
-    
-    socket.on("sendMessage", async ({ senderId, content, room = "global" }) => {
-      try {
-        
-        const newMsg = await Message.create({
-          sender: senderId,
-          content,
-          room,
-        });
-
-        const populated = await newMsg.populate("sender", "username email");
-
-        
-        io.to(room).emit("receiveMessage", populated);
-      } catch (err) {
-        console.error("Message error:", err.message);
+    socket.on("private_message", ({ to, message, from }) => {
+      const targetSocketId = userSockets.get(to);
+      if (targetSocketId) {
+        io.to(targetSocketId).emit("private_message", { from, message });
+        socket.emit("private_message", { from, message }); 
       }
     });
 
-    
-    socket.on("typing", ({ room, userId, isTyping }) => {
-      
-      socket.to(room).emit("typing", { userId, isTyping });
-    });
-
-    
     socket.on("disconnect", () => {
-      console.log(" User disconnected:", socket.id);
+      const username = onlineUsers.get(socket.id);
+      userSockets.delete(username);
+      onlineUsers.delete(socket.id);
 
-      
-      for (const [userId, sockId] of onlineUsers.entries()) {
-        if (sockId === socket.id) {
-          onlineUsers.delete(userId);
-          console.log(`User ${userId} went offline`);
-          
-          io.emit("onlineUsers", Array.from(onlineUsers.keys()));
-          break;
-        }
-      }
+      io.emit("online_users", Array.from(userSockets.keys()));
     });
   });
 };
+
+module.exports = initSocket;
