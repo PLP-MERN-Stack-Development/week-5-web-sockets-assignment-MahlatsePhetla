@@ -1,37 +1,31 @@
 
 import React, { useState } from "react";
 
-const LoginPage = ({ onLogin }) => {
-  const [username, setUsername] = useState("");
+const LoginPage = ({ setUsername }) => {
+  const [input, setInput] = useState("");
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (username.trim()) {
-      onLogin({ username }); // sets user in MainPage
+  const handleLogin = () => {
+    if (input.trim()) {
+      setUsername(input.trim());
     }
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white p-6 rounded shadow-md w-full max-w-sm"
+    <div className="max-w-md mx-auto mt-20 p-6 border rounded">
+      <h2 className="text-xl font-bold mb-4">Login</h2>
+      <input
+        type="text"
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        className="border p-2 w-full mb-3"
+        placeholder="Enter username"
+      />
+      <button
+        onClick={handleLogin}
+        className="bg-blue-600 text-white px-4 py-2 rounded w-full"
       >
-        <h2 className="text-2xl font-bold mb-4">Join Chat</h2>
-        <input
-          type="text"
-          placeholder="Enter a username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          className="w-full border border-gray-300 rounded px-3 py-2 mb-4"
-        />
-        <button
-          type="submit"
-          className="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
-        >
-          Enter Chat
-        </button>
-      </form>
+        Join Chat
+      </button>
     </div>
   );
 };

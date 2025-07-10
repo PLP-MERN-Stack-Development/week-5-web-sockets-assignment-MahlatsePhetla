@@ -1,23 +1,19 @@
 
-import React, { useState, useEffect } from "react";
-import { useSocket } from "../context/SocketContext";
+import { useState } from "react";
 import LoginPage from "./LoginPage";
 import ChatRoom from "./ChatRoom";
-
+a
 const MainPage = () => {
-  const [user, setUser] = useState(null);
-  const { socket } = useSocket();
+  const [username, setUsername] = useState("");
 
-  useEffect(() => {
-    if (socket && user) {
-      socket.emit("user_connected", user.username);
-    }
-  }, [socket, user]);
-
-  return user ? (
-    <ChatRoom user={user} />
-  ) : (
-    <LoginPage onLogin={setUser} />
+  return (
+    <>
+      {!username ? (
+        <LoginPage setUsername={setUsername} />
+      ) : (
+        <ChatRoom username={username} />
+      )}
+    </>
   );
 };
 

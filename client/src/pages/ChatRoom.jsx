@@ -1,172 +1,161 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useSocket } from "../context/SocketContext";
 
-const ChatRoom = ({ user }) => {
+const ChatRoom = ({ username }) => {
   const { socket, onlineUsers } = useSocket();
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState([]); 
-  const [privateMessages, setPrivateMessages] = useState({}); 
-  const [typingUser, setTypingUser] = useState(null);
 
+  const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [room, setRoom] = useState("global");
+  const [file, setFile] = useState(null);
+
+  const messagesEndRef = useRef();
+
+  // 🔽 Auto scroll to latest message
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // 🔁 Join a room on mount or room change
+  useEffect(() => {
+    if (socket && username) {
+      console.log(`📡 Emitting join_room to "${room}"`);
+      socket.emit("join_room", room);
+    }
+  }, [socket, room, username]); // ✅ include username to avoid React warning
+
+  // 🔔 Listen for messages
   useEffect(() => {
     if (!socket) return;
 
-    socket.on("receive_message", (msg) => {
+    const handleMessage = (msg) => {
+      console.log("📥 Received:", msg);
       setMessages((prev) => [...prev, msg]);
-    });
-
-    socket.on("private_message", ({ from, message }) => {
-  const otherUser = from === user.username ? selectedUser : from;
-
-  setPrivateMessages((prev) => {
-    const existing = prev[otherUser] || [];
-    return {
-      ...prev,
-      [otherUser]: [...existing, { from, message }],
     };
-  });
-});
 
-{selectedUser &&
-  (privateMessages[selectedUser] || []).map((msg, i) => (
-    <div
-      key={i}
-      className={`p-2 rounded ${
-        msg.from === user.username ? "bg-blue-100 text-right" : "bg-green-100"
-      }`}
-    >
-      <strong>{msg.from}: </strong> {msg.message}
-    </div>
-))}
-
-    socket.on("user_typing", (username) => {
-      if (username !== user.username) {
-        setTypingUser(username);
-        setTimeout(() => setTypingUser(null), 1500);
-      }
-    });
+    socket.on("receive_message", handleMessage);
+    socket.on("private_message", handleMessage);
 
     return () => {
-      socket.off("receive_message");
-      socket.off("private_message");
-      socket.off("user_typing");
+      socket.off("receive_message", handleMessage);
+      socket.off("private_message", handleMessage);
     };
-  }, [socket, user.username]);
+  }, [socket]);
 
-  const handleSend = (e) => {
-    e.preventDefault();
-    if (!message.trim()) return;
+  // ✅ Send a message
+  const handleSend = async () => {
+    if (!message.trim() && !file) return;
 
-    if (selectedUser) {
-      socket.emit("private_message", {
-        to: selectedUser,
-        from: user.username,
-        message,
-      });
+    let fileUrl = null;
 
-      setPrivateMessages((prev) => {
-        const existing = prev[selectedUser] || [];
-        return {
-          ...prev,
-          [selectedUser]: [...existing, { from: user.username, message }],
-        };
-      });
-    } else {
-      socket.emit("send_message", {
-        sender: user.username,
-        content: message,
-      });
+    if (file) {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const res = await fetch("http://localhost:4000/api/upload", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        fileUrl = data.filePath;
+      } catch (err) {
+        console.error("❌ File upload failed", err);
+      }
     }
+
+    const msgData = {
+      sender: username,
+      content: message.trim(),
+      room,
+      fileUrl,
+      timestamp: new Date().toISOString(),
+    };
+
+    console.log("📤 Sending message:", msgData);
+    socket.emit("send_message", msgData);
 
     setMessage("");
+    setFile(null);
   };
 
-  const handleTyping = () => {
-    if (socket && !selectedUser) {
-      socket.emit("typing", user.username);
-    }
+  // 🕒 Format timestamp
+  const formatTime = (iso) => {
+    const date = new Date(iso);
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+
+  // 🔁 Switch room
+  const switchRoom = (newRoom) => {
+    console.log("🔁 Switching to room:", newRoom);
+    setMessages([]);
+    setRoom(newRoom);
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
-      <header className="bg-blue-600 text-white p-4 text-center font-semibold">
-        Welcome, {user.username}
-      </header>
+    <div className="max-w-4xl mx-auto mt-10 p-6 bg-white shadow rounded-lg space-y-4">
+      <h2 className="text-xl font-bold">💬 VibeChat - {room}</h2>
 
-      <div className="flex flex-1">
-        {/* Sidebar: Online Users */}
-        <aside className="w-1/4 bg-white border-r p-4 hidden sm:block">
-          <h3 className="font-bold mb-2">Online Users</h3>
-          <ul className="text-sm space-y-1">
-            {onlineUsers.map((u, i) => (
-              <li
-                key={i}
-                onClick={() => setSelectedUser(u !== user.username ? u : null)}
-                className={`cursor-pointer p-1 rounded ${
-                  selectedUser === u ? "bg-blue-100 font-bold" : ""
-                } ${u === user.username ? "text-gray-400" : ""}`}
+      {/* Room Buttons */}
+      <div className="flex gap-4 mb-2">
+        <button onClick={() => switchRoom("global")} className="text-blue-600">🌍 Global</button>
+        <button onClick={() => switchRoom("tech")} className="text-green-600">💻 Tech</button>
+        <button onClick={() => switchRoom("fun")} className="text-pink-600">🎉 Fun</button>
+      </div>
+
+      {/* Online Users */}
+      <div className="text-sm">
+        <strong>🟢 Online:</strong>{" "}
+        {onlineUsers.map((user) => (
+          <span key={user} className="mr-2">{user}</span>
+        ))}
+      </div>
+
+      {/* Messages */}
+      <div className="h-64 overflow-y-auto bg-gray-100 border p-4 rounded">
+        {messages.map((msg, i) => (
+          <div key={i} className="mb-2">
+            <strong>{msg.sender}:</strong>{" "}
+            {msg.content && <span>{msg.content}</span>}
+            {msg.fileUrl && (
+              <a
+                href={`http://localhost:4000${msg.fileUrl}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-2 text-blue-500 underline"
               >
-                • {u}
-              </li>
-            ))}
-          </ul>
-        </aside>
-
-        {/* Chat Window */}
-        <main className="flex-1 p-4 flex flex-col justify-between">
-          <div className="space-y-2 mb-4 overflow-y-auto h-[60vh]">
-            {/* Display private or global messages */}
-            {selectedUser
-              ? (privateMessages[selectedUser] || []).map((msg, i) => (
-                  <div
-                    key={i}
-                    className={`p-2 rounded ${
-                      msg.from === user.username
-                        ? "bg-blue-100 text-right"
-                        : "bg-green-100"
-                    }`}
-                  >
-                    <strong>{msg.from}: </strong> {msg.message}
-                  </div>
-                ))
-              : messages.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={`p-2 rounded ${
-                      msg.sender === user.username
-                        ? "bg-blue-100 text-right"
-                        : "bg-gray-200"
-                    }`}
-                  >
-                    <strong>{msg.sender}: </strong> {msg.content}
-                  </div>
-                ))}
-
-            {typingUser && !selectedUser && (
-              <p className="text-sm text-gray-500">{typingUser} is typing...</p>
+                📎 File
+              </a>
+            )}
+            {msg.timestamp && (
+              <span className="text-xs text-gray-500 ml-2">
+                [{formatTime(msg.timestamp)}]
+              </span>
             )}
           </div>
+        ))}
+        <div ref={messagesEndRef} />
+      </div>
 
-          {/* Message Input */}
-          <form onSubmit={handleSend} className="flex gap-2">
-            <input
-              type="text"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={handleTyping}
-              placeholder={
-                selectedUser
-                  ? `Private message to ${selectedUser}`
-                  : "Type a message..."
-              }
-              className="flex-1 border border-gray-300 rounded px-3 py-2"
-            />
-            <button className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-              Send
-            </button>
-          </form>
-        </main>
+      {/* Input Section */}
+      <div className="flex gap-2 mt-4 items-center">
+        <input
+          type="file"
+          onChange={(e) => setFile(e.target.files[0])}
+          className="text-sm"
+        />
+        <input
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          className="flex-1 border px-3 py-2 rounded"
+          placeholder={`Message to ${room}`}
+        />
+        <button
+          onClick={handleSend}
+          className="bg-blue-600 text-white px-4 py-2 rounded"
+        >
+          Send
+        </button>
       </div>
     </div>
   );

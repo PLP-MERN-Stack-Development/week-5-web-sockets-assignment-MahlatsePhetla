@@ -1,13 +1,14 @@
 
+// client/src/context/SocketContext.js
 import { createContext, useContext, useEffect, useState } from "react";
 import { io } from "socket.io-client";
 
-// Set this to match your backend
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:4000";
-
+const SOCKET_URL = "http://localhost:4000";
 const SocketContext = createContext();
 
-export const SocketProvider = ({ children }) => {
+export const useSocket = () => useContext(SocketContext);
+
+export const SocketProvider = ({ children, username }) => {
   const [socket, setSocket] = useState(null);
   const [onlineUsers, setOnlineUsers] = useState([]);
 
@@ -18,12 +19,24 @@ export const SocketProvider = ({ children }) => {
 
     setSocket(newSocket);
 
-    newSocket.on("online_users", (users) => {
+    return () => {
+      newSocket.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!socket || !username) return;
+
+    socket.emit("set_username", username);
+
+    socket.on("update_online", (users) => {
       setOnlineUsers(users);
     });
 
-    return () => newSocket.close();
-  }, []);
+    return () => {
+      socket.off("update_online");
+    };
+  }, [socket, username]);
 
   return (
     <SocketContext.Provider value={{ socket, onlineUsers }}>
@@ -31,5 +44,3 @@ export const SocketProvider = ({ children }) => {
     </SocketContext.Provider>
   );
 };
-
-export const useSocket = () => useContext(SocketContext);
